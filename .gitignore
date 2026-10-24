@@ -1,0 +1,10 @@
+build/
+out/
+*.o
+*.d
+
+compile_commands.json
+
+*~
+*.swp
+.DS_Store
