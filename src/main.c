@@ -4,6 +4,7 @@
 
 #define LIBARGV_IMPLEMENTATION
 #include "../../c-assets/libargv/standalone_lib/libargv.h"
+#include "../../c-assets/libdefer/libdefer.h"
 
 #define IO_BUFFER_SIZE (64 * 1024)
 
@@ -48,6 +49,8 @@ int main(int argc, char **argv) {
   int min_len = 4;
 
   CliParser parser;
+  defer(argv_free, &parser);
+
   argv_init(&parser, argv[0]);
   argv_bind_rest(&parser, "source", &source_file, &source_file_count, false, NULL, "Source files.");
   argv_bind_int(&parser, "-n", "--bytes", &min_len, false, NULL, "Minimum bytes in a string.");
@@ -58,30 +61,26 @@ int main(int argc, char **argv) {
 
   CliStatus status = argv_parse(&parser, argc, argv);
   if (status == ARGV_HELP_REQUESTED) {
-    argv_free(&parser);
     return 0;
   }
   if (status != ARGV_OK) {
     fprintf(stderr, "Error in command line: %s\nUse '%s --help'.\n", argv_get_error(&parser), argv[0]);
-    argv_free(&parser);
     return 1;
   }
 
   if (min_len <= 0) {
     fprintf(stderr, "[ERROR] Minimum bytes length must be greater than 0.\n");
-    argv_free(&parser);
     return 1;
   }
 
   size_t capacity = 1024;
   char *str = malloc(capacity);
+  defer(free, str);
   unsigned char *buffer = malloc(IO_BUFFER_SIZE);
+  defer(free, buffer);
 
   if (!str || !buffer) {
     fprintf(stderr, "[ERROR] Memory allocation failed.\n");
-    free(str);
-    free(buffer);
-    argv_free(&parser);
     return 1;
   }
 
@@ -114,9 +113,6 @@ int main(int argc, char **argv) {
             if (!tmp) {
               fprintf(stderr, "[ERROR] Out of memory.\n");
               if (file != stdin) fclose(file);
-              free(str);
-              free(buffer);
-              argv_free(&parser);
               return 1;
             }
             str = tmp;
@@ -144,8 +140,5 @@ int main(int argc, char **argv) {
     }
   }
 
-  free(str);
-  free(buffer);
-  argv_free(&parser);
   return 0;
 }
