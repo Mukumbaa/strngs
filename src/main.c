@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <string.h>
 
 #define LIBARGV_IMPLEMENTATION
 #include "../../c-assets/libargv/standalone_lib/libargv.h"
@@ -39,6 +40,21 @@ void emit_string(const char *file_name, bool print_file_name, size_t offset, cha
   }
 }
 
+static void free_indirect(void *p) {
+  void **ptr = (void **)p;
+  if (ptr && *ptr) {
+    free(*ptr);
+    *ptr = NULL;
+  }
+}
+
+static void safe_fclose(void *p) {
+  FILE *f = (FILE *)p;
+  if (f && f != stdin) {
+    fclose(f);
+  }
+}
+
 int main(int argc, char **argv) {
   const char **source_file = NULL;
   size_t source_file_count = 0;
@@ -49,9 +65,9 @@ int main(int argc, char **argv) {
   int min_len = 4;
 
   CliParser parser;
+  argv_init(&parser, argv[0]);
   defer(argv_free, &parser);
 
-  argv_init(&parser, argv[0]);
   argv_bind_rest(&parser, "source", &source_file, &source_file_count, false, NULL, "Source files.");
   argv_bind_int(&parser, "-n", "--bytes", &min_len, false, NULL, "Minimum bytes in a string.");
   argv_bind_str(&parser, "-s", "--output-separator", &output_separator, false, NULL, "Custom separator.");
@@ -75,14 +91,17 @@ int main(int argc, char **argv) {
 
   size_t capacity = 1024;
   char *str = malloc(capacity);
-  defer(free, str);
   unsigned char *buffer = malloc(IO_BUFFER_SIZE);
-  defer(free, buffer);
 
   if (!str || !buffer) {
+    free(str);
+    free(buffer);
     fprintf(stderr, "[ERROR] Memory allocation failed.\n");
     return 1;
   }
+
+  defer(free_indirect, &str);
+  defer(free, buffer);
 
   size_t loops = (source_file_count == 0) ? 1 : source_file_count;
 
@@ -98,6 +117,8 @@ int main(int argc, char **argv) {
       }
     }
 
+    defer(safe_fclose, file);
+
     size_t num_bytes = 0;
     size_t total_bytes_read = 0;
     size_t char_count = 0;
@@ -112,7 +133,6 @@ int main(int argc, char **argv) {
             char *tmp = realloc(str, capacity);
             if (!tmp) {
               fprintf(stderr, "[ERROR] Out of memory.\n");
-              if (file != stdin) fclose(file);
               return 1;
             }
             str = tmp;
@@ -133,10 +153,6 @@ int main(int argc, char **argv) {
       emit_string(filename, print_file_name,
           total_bytes_read - char_count, radix,
           str, char_count, output_separator);
-    }
-
-    if (file != stdin) {
-      fclose(file);
     }
   }
 
